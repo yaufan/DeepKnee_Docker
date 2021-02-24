@@ -1,4 +1,4 @@
-FROM ubuntu
+FROM python
 MAINTAINER YauFan <yaufan0625@gmail.com>
 
 # install build utilities
