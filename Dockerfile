@@ -6,8 +6,8 @@ RUN apt-get update && \
 	apt-get install -y gcc make apt-transport-https ca-certificates build-essential
 
 # check our python environment
-RUN python --version
-RUN pip --version
+# RUN python --version
+# RUN pip --version
 
 
 # Installing python dependencies
