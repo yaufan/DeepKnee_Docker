@@ -19,7 +19,7 @@ COPY . /usr/src/deepknee
 
 RUN pip install --upgrade pip setuptools
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install opencv-python
+RUN pip install opencv-python-headless
 
 # Running Python Application
 CMD ["python", "Knee_and_classification_infer_v3.py"]
