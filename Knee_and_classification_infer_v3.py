@@ -29,6 +29,8 @@ import losses
 import joblib
 import matplotlib.pyplot as plt
 import copy
+import shutil
+from glob import glob
 
 arch_names = list(archs.__dict__.keys())
 loss_names = list(losses.__dict__.keys())
@@ -205,38 +207,63 @@ def knee_location_detection(image,pred_img,modelkeypoint,osi,LcMmw,LcMmh):
         torch.cuda.empty_cache()
 
     # crop knee image    
-    crop_img = pred_img[int(out_preds[0][1]-LcMmh):int(out_preds[0][1]+LcMmh),int(out_preds[0][0]-LcMmw):int(out_preds[0][0]+LcMmw),:]
-    print('knee location detection time:', time.time()-train_started, 'seconds')
+    if (out_preds[0][1]-LcMmh) < 0:
+        wsx1 = 0
+    else:
+        wsx1 = out_preds[0][1]-LcMmh
 
+    if (out_preds[0][1]+LcMmh) > osi[0]:
+        wsx2 =  osi[0]
+    else:
+        wsx2 = out_preds[0][1]+LcMmh 
+
+    if (out_preds[0][0]-LcMmw) < 0:
+        wsy1 = 0
+    else:
+        wsy1 = out_preds[0][0]-LcMmw
+
+    if (out_preds[0][0]+LcMmw) > osi[0]:
+        wsy2 =  osi[1]
+    else:
+        wsy2 = out_preds[0][0]+LcMmw
+    #print(osi)
+    #print(out_preds)
+    crop_img = pred_img[int(wsx1):int(wsx2),int(wsy1):int(wsy2),:]
+    print('knee location detection time:', time.time()-train_started, 'seconds')
+    #print(crop_img)
+    
     return out_preds, crop_img
 
 def OA_classification(crop_img,sess):
+    try:
+        train_started = time.time()
+        imknee = cv2.resize(crop_img,(224,224),interpolation=cv2.INTER_LINEAR)
+        imknee = imknee[:,:,np.newaxis].astype('float32')
+        imknee = imknee.transpose((2, 3, 0, 1))
 
-    train_started = time.time()
-    imknee = cv2.resize(crop_img,(224,224),interpolation=cv2.INTER_LINEAR)
-    imknee = imknee[:,:,np.newaxis].astype('float32')
-    imknee = imknee.transpose((2, 3, 0, 1))
+        #print(imknee.shape)
+        input_data = np.ones((1, 3, 224, 224), dtype=np.float32)
+        input_name = sess.get_inputs()[0].name
+        print("input name", input_name)
 
-    #print(imknee.shape)
-    input_data = np.ones((1, 3, 224, 224), dtype=np.float32)
-    input_name = sess.get_inputs()[0].name
-    print("input name", input_name)
+        input_shape = sess.get_inputs()[0].shape
+        print("input shape", input_shape)
 
-    input_shape = sess.get_inputs()[0].shape
-    print("input shape", input_shape)
+        output_name= sess.get_outputs()[0].name
+        print("output name", output_name)
+        output_shape = sess.get_outputs()[0].shape
+        print("output shape", output_shape)
 
-    output_name= sess.get_outputs()[0].name
-    print("output name", output_name)
-    output_shape = sess.get_outputs()[0].shape
-    print("output shape", output_shape)
-
-    #forward model
-    res = sess.run([output_name], {input_name: imknee})
-    probs = np.array(res)
-    probs = probs.squeeze()    
-    print(np.argmax(probs))
-    print('knee KL classification time:', time.time()-train_started, 'seconds')
-    return probs
+        #forward model
+        res = sess.run([output_name], {input_name: imknee})
+        probs = np.array(res)
+        probs = probs.squeeze()    
+        print(np.argmax(probs))
+        print('knee KL classification time:', time.time()-train_started, 'seconds')
+        run_index = 1
+    except:
+        run_index = 0
+    return probs,run_index
 
 def OA_detection(image,modelLine,osi,ps):   
     
@@ -287,7 +314,7 @@ def OA_detection(image,modelLine,osi,ps):
         FRPC41 = np.round((FRP[1] + FRPC) / 2)
         FLPC41 = np.round((FLP[1] + FLPC) / 2)
 
-        #plt.imsave('test1F.png',Fmap.astype('uint8'))
+        plt.imsave('test1F.png',Fmap.astype('uint8'))
 
         
         Tmap = np.zeros((outputLine.shape[1],outputLine.shape[2]))
@@ -318,7 +345,7 @@ def OA_detection(image,modelLine,osi,ps):
         TRPC41 = np.round((TRP[1] + TRPC) / 2)
         TLPC41 = np.round((TLP[1] + TLPC) / 2)
 
-        #plt.imsave('test1t.png',Fmap.astype('uint8'))
+        plt.imsave('test1t.png',Fmap.astype('uint8'))
 
         Fx = np.array(Fx)
         Fy = np.array(Fy)
@@ -338,14 +365,14 @@ def OA_detection(image,modelLine,osi,ps):
         Lmy = np.concatenate((Fy[locFt],Ty[np.fliplr(locTt)].squeeze()),axis=0)
 
         checkMap = ((Fmap + Tmap)>120)*255
-        #plt.imsave('test1ft.png',checkMap.astype('uint8'))
+        plt.imsave('test1ft.png',checkMap.astype('uint8'))
         checkRap = np.zeros((outputLine.shape[1],outputLine.shape[2]), np.uint8)
         area1 = np.concatenate((Rmx[:,np.newaxis],Rmy[:,np.newaxis]), axis=1)
         area2 = np.concatenate((Lmx[:,np.newaxis],Lmy[:,np.newaxis]), axis=1)
 
         cv2.fillPoly(checkRap, [area1], 128)
         cv2.fillPoly(checkRap, [area2], 175)
-        #plt.imsave('test1tcheckRap.png',checkRap.astype('uint8'))
+        plt.imsave('test1tcheckRap.png',checkRap.astype('uint8'))
 
 
         outputIM = checkMap+checkRap
@@ -437,55 +464,257 @@ def OA_detection(image,modelLine,osi,ps):
     TibiaLLocSeDmin = round(TibiaLLocSeDmin,2)    
 
     
-
-    
     return tmpImMap,FemurFRLocDP,FemurTRLocDP,FemurFLLocDP,FemurTLLocDP,TibiaFRLocDP,TibiaTRLocDP,TibiaFLLocDP,TibiaTLLocDP,RPL,LPL,FemurRLocSeDmin,FemurLLocSeDmin,TibiaRLocSeDmin,TibiaLLocSeDmin
 
-def main():
+def save_dicom_process(img_file_name,ToOutput,result_str,dcm_ds,osi,Result_path):
+    #ds.some_function_that_modifies_arr
 
+    dsn = Dataset()
+    dsn.file_meta = copy.deepcopy(dcm_ds.file_meta) 
+    dsn.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2'
+    dsn.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.1.1'
+    dsn.file_meta.MediaStorageSOPInstanceUID = "1.2.3"
+    dsn.file_meta.ImplementationClassUID = "1.2.3.4"
 
+    for tagIndex in dcm_ds.keys():
+        if tagIndex == 'PixelData':
+            dsn.PixelData = ToOutput.tobytes()
+        elif tagIndex == 'WindowCenter' or tagIndex == 'WindowWidth':
+            continue
+        else:
+            dsn[tagIndex] = dcm_ds[tagIndex]
+
+    dsn.PatientName = 'Created'
+
+    dsn.Rows = osi[0]
+    dsn.Columns = osi[1]
+    dsn.PhotometricInterpretation = "RGB"
+    dsn.SamplesPerPixel = 3
+    dsn.BitsStored = 8
+    dsn.BitsAllocated = 8
+    dsn.HighBit = 7
+    dsn.PixelRepresentation = 0
+    dsn.PlanarConfiguration = 0 
+    dsn.NumberOfFrames = 1    
+    dsn.SOPClassUID = dcm_ds.SOPClassUID
+    dsn.SOPInstanceUID = dcm_ds.SOPInstanceUID
+    dsn.StudyInstanceUID = dcm_ds.StudyInstanceUID
+    dsn.SeriesInstanceUID = dcm_ds.SeriesInstanceUID     
+    dsn.ImageComments = result_str
+  
+    #dsn.add_new(0x002040000,'LT', str(FemurRLocSeDmin))
+    dsn.is_little_endian = True
+    dsn.is_implicit_VR = True
+    print(os.path.join(Result_path,img_file_name))
+    dsn.save_as(os.path.join(Result_path,img_file_name), write_like_original=False)
+
+def infer_process(sess,modelkeypoint,modelLine,infer_path,Result_path,Final_path,buffer_size):
     # init     
     mmCw = 65
-    mmCh = 80      
-
+    mmCh = 80    
+    #load Q data
+    #   
+    QDataFile = glob(infer_path + '/*')
     #load dicom data
-    img_path = './Data/Test.DCM'
+    for img_path in QDataFile:    
+        # Data loading code
+        
+        try:
+            print("=> loading dicom image " )
+            dicom_image = pyd.dcmread(img_path)
+            print(img_path)
+            # 16 bit to bit
+            ds = pyd.read_file(img_path, force=True)
+            ds.decompress()
+            ansds = ds.PhotometricInterpretation
+
+            if ansds == 'MONOCHROME1':
+                image = ((2**ds.get('BitsStored'))-1) - dicom_image.pixel_array
+            else:
+                image = dicom_image.pixel_array
+
+            image = image.astype('float32') / ((2**ds.get('BitsStored'))-1) 
+            image = np.repeat(image[:,:,np.newaxis],3,axis=2)
+
+            pred_img = copy.deepcopy(image)
+            pred_img = (pred_img*255).astype('uint8')   
+            
+            # 原圖處理
+            if 'PixelSpacing' in ds:
+                ps = ds.get('PixelSpacing')[0]
+            elif 'ImagerPixelSpacing' in ds:   
+                ps = ds.get('ImagerPixelSpacing')[0]
+            else:
+                ps = 0.15
+
+            LcMmw = mmCw / ps
+            LcMmh = mmCh / ps 
+
+            osi = image.shape
+            
+            image = cv2.resize(image,(512,512),interpolation=cv2.INTER_LINEAR) 
+            image = image[:,:,:,np.newaxis]            
+            
+            image = image.transpose((3, 2, 0, 1))        
+            image = np.asarray(image)       
+            
+
+            # finding knee location and croping knee image
+            print("=> finding knee location and croping knee image" )
+            try:
+                out_preds, crop_img = knee_location_detection(image,pred_img,modelkeypoint,osi,LcMmw,LcMmh)
+            except:
+                result_str = 'knee location model cannot infer'
+                save_dicom_process(filename,pred_img,result_str,ds,osi,Result_path)
+                continue
+
+            print("=> Knee KL grading infer..." )    
+            try:
+                probs,OA_classification_run_index = OA_classification(crop_img,sess)
+            except:
+                result_str = 'Knee KL grading model cannot infer'
+                save_dicom_process(filename,pred_img,result_str,ds,osi,Result_path)
+                continue
+            # create result  
+            print("=> create Knee KL grading result" )
+
+            plt.figure()   
+            plt.subplot(1,2,1)
+            plt.imshow(crop_img, cmap='gray')
+            plt.title('KL-grading: ' + str(np.argmax(probs)))
+            plt.axis('off')
+
+            plt.subplot(1,2,2) 
+            
+            for kl in range(5):
+                print(np.round(probs[kl], 2))
+                plt.text(kl - 0.3, 0.35, "%.2f" % np.round(probs[kl], 2), fontsize=6)
+                plt.bar(np.array([0, 1, 2, 3, 4]), probs, color='red', align='center',
+                        tick_label=['KL0', 'KL1', 'KL2', 'KL3', 'KL4'], alpha=0.3)
+                plt.ylim(0, 1)
+                plt.yticks([])
+            
+            plt.savefig('./Result/Knee_classifcation_result.png', dpi=300)
+            plt.close()
+            try:
+                tmpImMap,FemurFRLocDP,FemurTRLocDP,FemurFLLocDP,FemurTLLocDP,TibiaFRLocDP,TibiaTRLocDP,TibiaFLLocDP,TibiaTLLocDP,RPL,LPL,FemurRLocSeDmin,FemurLLocSeDmin,TibiaRLocSeDmin,TibiaLLocSeDmin = OA_detection(image,modelLine,osi,ps) 
+            except:
+                result_str = 'Knee line model cannot infer'
+                save_dicom_process(filename,pred_img,result_str,ds,osi,Result_path)
+                continue
+            ##
+            for i in range(pred_img.shape[0]):
+                for j in range(pred_img.shape[1]):
+                    if tmpImMap[i,j] == 174 or tmpImMap[i,j] == 127 or tmpImMap[i,j] == 255:
+                        pred_img[i,j,:] = [255,255,255]
+                    elif tmpImMap[i,j] == 128:
+                        pred_img[i,j,:] = pred_img[i,j,:] *0.6 + [0,100,0]
+                    elif tmpImMap[i,j] == 175:
+                        pred_img[i,j,:] = pred_img[i,j,:] *0.6 + [100,0,0] 
+                    
+            ##
+
+            # crop knee image    
+            if (out_preds[0][1]-LcMmh) < 0:
+                wsx1 = 0
+            else:
+                wsx1 = out_preds[0][1]-LcMmh
+
+            if (out_preds[0][1]+LcMmh) > osi[0]:
+                wsx2 =  osi[0]
+            else:
+                wsx2 = out_preds[0][1]+LcMmh 
+
+            if (out_preds[0][0]-LcMmw) < 0:
+                wsy1 = 0
+            else:
+                wsy1 = out_preds[0][0]-LcMmw
+
+            if (out_preds[0][0]+LcMmw) > osi[0]:
+                wsy2 =  osi[1]
+            else:
+                wsy2 = out_preds[0][0]+LcMmw
+            
+            crop_img_with_line = pred_img[int(wsx1):int(wsx2),int(wsy1):int(wsy2),:]
+           
+            train_started = time.time()
+            
+            plt.figure() 
+            plt.subplot(1,3,1)
+            plt.imshow(pred_img,cmap = ('gray')) 
+            plt.title('JSW area')   
+            plt.text(100,100,'Area:%.4f'%RPL,ha = 'center', color = "g",fontsize=12)
+            plt.text(100,300,'Area:%.4f'%LPL,ha = 'center', color = "r",fontsize=12)     
+            plt.axis('off')   
+            ##line
+            ToOutput = copy.deepcopy(pred_img)
+            Femurpred_img = copy.deepcopy(pred_img)
+            ToOutput = cv2.line(ToOutput, (int(FemurFRLocDP[0]), int(FemurFRLocDP[1])),(int(FemurTRLocDP[0]), int(FemurTRLocDP[1])), (255,0,0),1)
+            ToOutput = cv2.line(ToOutput, (int(FemurFLLocDP[0]), int(FemurFLLocDP[1])), (int(FemurTLLocDP[0]), int(FemurTLLocDP[1])), (0,255,0),1) 
+            ToOutput = cv2.line(ToOutput, (int(TibiaFRLocDP[0]), int(TibiaFRLocDP[1])),(int(TibiaTRLocDP[0]), int(TibiaTRLocDP[1])), (0,0,255),1)
+            ToOutput = cv2.line(ToOutput, (int(TibiaFLLocDP[0]), int(TibiaFLLocDP[1])), (int(TibiaTLLocDP[0]), int(TibiaTLLocDP[1])), (255,255,0),1)
+
+            Femur_line_img = cv2.line(Femurpred_img, (int(FemurFRLocDP[0]), int(FemurFRLocDP[1])),(int(FemurTRLocDP[0]), int(FemurTRLocDP[1])), (255,0,0),5)
+            Femur_line_img = cv2.line(Femur_line_img, (int(FemurFLLocDP[0]), int(FemurFLLocDP[1])), (int(FemurTLLocDP[0]), int(FemurTLLocDP[1])), (0,255,0),5) 
+
+            Tibiapred_img = copy.deepcopy(pred_img)
+            Tibia_line_img = cv2.line(Tibiapred_img, (int(TibiaFRLocDP[0]), int(TibiaFRLocDP[1])),(int(TibiaTRLocDP[0]), int(TibiaTRLocDP[1])), (255,0,0),5)
+            Tibia_line_img = cv2.line(Tibia_line_img, (int(TibiaFLLocDP[0]), int(TibiaFLLocDP[1])), (int(TibiaTLLocDP[0]), int(TibiaTLLocDP[1])), (0,255,0),5)
+            
+            Femur_line_img_crop = Femur_line_img[int(wsx1):int(wsx2),int(wsy1):int(wsy2),:]
+        
+            Tibia_line_img_crop = Tibia_line_img[int(wsx1):int(wsx2),int(wsy1):int(wsy2),:]
+            plt.imsave('Femur_line_img.png',Femur_line_img.astype('uint8'))
+            plt.imsave('Tibia_line_img.png',Tibia_line_img.astype('uint8'))
+            plt.subplot(1,3,2)
+            plt.imshow(Femur_line_img_crop,cmap = ('gray'))
+            plt.title('Based on Femur')  
+            plt.text(100,100,'Dist:%.2f'%FemurRLocSeDmin,ha = 'center', color = "g",fontsize=12)
+            plt.text(100,300,'Dist:%.2f'%FemurLLocSeDmin,ha = 'center', color = "r",fontsize=12)          
+            plt.axis('off')
+            
+
+            plt.subplot(1,3,3)
+            plt.imshow(Tibia_line_img_crop,cmap = ('gray'))
+            plt.title('Based on Tibia')  
+            plt.text(100,100,'Dist:%.2f'%TibiaRLocSeDmin,ha = 'center', color = "g",fontsize=12)
+            plt.text(100,300,'Dist:%.2f'%TibiaLLocSeDmin,ha = 'center', color = "r",fontsize=12)         
+            plt.axis('off')
+
+            plt.savefig('./Result/Knee_JSW_result.png', dpi=300)
+            print('knee line draw time:', time.time()-train_started, 'seconds')
+            plt.close()
+            result_str = 'OA KL Grading: %s (%.2f) \n Right Area: %.4f \n Left Area: %.4f \n Femur based Right Dist (Red line): %.2f \n Femur based Left Dist (Green line): %.2f \n Tibia based Right Dist (Blue line): %.2f \n Tibia based Left Dist (Yellow line): %.2f ' %(str(np.argmax(probs)),np.round(probs[np.argmax(probs)], 2),RPL,LPL,FemurRLocSeDmin,FemurLLocSeDmin,TibiaRLocSeDmin,TibiaLLocSeDmin)
+            dirname,filename=os.path.split(img_path)
+            save_dicom_process(filename,ToOutput,result_str,ds,osi,Result_path)
+        except:
+            result_str = 'model cannot infer'
+            save_dicom_process(filename,pred_img,result_str,ds,osi,Result_path)
+    move_file_to_inferFolder(buffer_size,infer_path,Final_path)
+
+def move_file_to_inferFolder(buffer_size,data_path,infer_path):
+    img_paths = glob(data_path + '/*')
+    count_index = 0
+    for ftmp in img_paths:        
+        dirname,filename=os.path.split(ftmp)
+        shutil.move(os.path.join(data_path ,filename), os.path.join(infer_path,filename))
+        #os.remove(os.path.join(data_path,filename))
+        count_index += 1
+        if count_index == buffer_size:
+            break
+        
 
 
-    print("=> loading dicom image " )
-    dicom_image = pyd.dcmread(img_path)
+def main():
+    buffer_size = 4
+    count_file_size = 0
+    data_path = './Data'
+    infer_path = './QData'
+    Final_path = './EData'
+    Result_path = './Result'
 
-    # 16 bit to bit
-    ds = pyd.read_file(img_path, force=True)
-    ds.decompress()
-    ansds = ds.PhotometricInterpretation
-
-    if ansds == 'MONOCHROME1':
-        image = ((2**ds.get('BitsStored'))-1) - dicom_image.pixel_array
-    else:
-        image = dicom_image.pixel_array
-
-    image = image.astype('float32') / ((2**ds.get('BitsStored'))-1) 
-    image = np.repeat(image[:,:,np.newaxis],3,axis=2)
-
-    pred_img = copy.deepcopy(image)
-    pred_img = (pred_img*255).astype('uint8')   
-      
-    # 原圖處理
-    ps = ds.get('PixelSpacing')[0]   
-    
-    LcMmw = mmCw / ps
-    LcMmh = mmCh / ps 
-
-    osi = image.shape
-    
-    image = cv2.resize(image,(512,512),interpolation=cv2.INTER_LINEAR) 
-    image = image[:,:,:,np.newaxis]            
-    
-    image = image.transpose((3, 2, 0, 1))        
-    image = np.asarray(image) 
-     
     argsKeypoint = parse_args_keypoint()
+
     argsLine = parse_args_line()
     device = torch.device("cuda:0" if torch.cuda.is_available() else 'cpu')
 
@@ -506,150 +735,27 @@ def main():
     modelkeypoint.to(device)
     modelkeypoint.load_state_dict(torch.load('model_best_keypoint.pth'))  
 
-    # finding knee location and croping knee image
-    print("=> finding knee location and croping knee image" )
-    out_preds, crop_img = knee_location_detection(image,pred_img,modelkeypoint,osi,LcMmw,LcMmh)
-    print("=> Knee KL grading infer..." )
-    probs = OA_classification(crop_img,sess)
-    # create result  
-    print("=> create Knee KL grading result" )
+    while True:
+        try:
+            time.sleep(5)
+            count_file_size = len([name for name in os.listdir(data_path) if os.path.isfile(os.path.join(data_path, name))])
+            print('File number:', count_file_size) 
+            if count_file_size >= buffer_size:
+                print('moving file....')
+                move_file_to_inferFolder(buffer_size,data_path,infer_path)
+                time.sleep(10)
+                print('infer QData file....')
+                infer_process(sess,modelkeypoint,modelLine,infer_path,Result_path,Final_path,buffer_size)
+            else:
+                print('wait file buffer is not enough....')
+        except:  
+            print('infer too quick....')  
 
-    plt.figure()   
-    plt.subplot(1,2,1)
-    plt.imshow(crop_img, cmap='gray')
-    plt.title('KL-grading: ' + str(np.argmax(probs)))
-    plt.axis('off')
 
-    plt.subplot(1,2,2) 
-    
-    for kl in range(5):
-        print(np.round(probs[kl], 2))
-        plt.text(kl - 0.3, 0.35, "%.2f" % np.round(probs[kl], 2), fontsize=6)
-        plt.bar(np.array([0, 1, 2, 3, 4]), probs, color='red', align='center',
-                tick_label=['KL0', 'KL1', 'KL2', 'KL3', 'KL4'], alpha=0.3)
-        plt.ylim(0, 1)
-        plt.yticks([])
-    
-    #plt.savefig('./Result/Knee_classifcation_result.png', dpi=300)
-    plt.close()
-    
-    tmpImMap,FemurFRLocDP,FemurTRLocDP,FemurFLLocDP,FemurTLLocDP,TibiaFRLocDP,TibiaTRLocDP,TibiaFLLocDP,TibiaTLLocDP,RPL,LPL,FemurRLocSeDmin,FemurLLocSeDmin,TibiaRLocSeDmin,TibiaLLocSeDmin = OA_detection(image,modelLine,osi,ps) 
-
-    ##
-    for i in range(pred_img.shape[0]):
-        for j in range(pred_img.shape[1]):
-            if tmpImMap[i,j] == 174 or tmpImMap[i,j] == 127 or tmpImMap[i,j] == 255:
-                pred_img[i,j,:] = [255,255,255]
-            elif tmpImMap[i,j] == 128:
-                pred_img[i,j,:] = pred_img[i,j,:] *0.6 + [0,100,0]
-            elif tmpImMap[i,j] == 175:
-                pred_img[i,j,:] = pred_img[i,j,:] *0.6 + [100,0,0] 
-            
-    ##
-    crop_img_with_line = pred_img[int(out_preds[0][1]-LcMmh):int(out_preds[0][1]+LcMmh),int(out_preds[0][0]-LcMmw):int(out_preds[0][0]+LcMmw),:]
-
-    train_started = time.time()
-    
-    plt.figure() 
-    plt.subplot(1,3,1)
-    plt.imshow(pred_img,cmap = ('gray')) 
-    plt.title('JSW area')   
-    plt.text(100,100,'Area:%.4f'%RPL,ha = 'center', color = "g",fontsize=12)
-    plt.text(100,300,'Area:%.4f'%LPL,ha = 'center', color = "r",fontsize=12)     
-    plt.axis('off')   
-    ##line
-    ToOutput = copy.deepcopy(pred_img)
-    Femurpred_img = copy.deepcopy(pred_img)
-    ToOutput = cv2.line(ToOutput, (int(FemurFRLocDP[0]), int(FemurFRLocDP[1])),(int(FemurTRLocDP[0]), int(FemurTRLocDP[1])), (255,0,0),1)
-    ToOutput = cv2.line(ToOutput, (int(FemurFLLocDP[0]), int(FemurFLLocDP[1])), (int(FemurTLLocDP[0]), int(FemurTLLocDP[1])), (0,255,0),1) 
-    ToOutput = cv2.line(ToOutput, (int(TibiaFRLocDP[0]), int(TibiaFRLocDP[1])),(int(TibiaTRLocDP[0]), int(TibiaTRLocDP[1])), (0,0,255),1)
-    ToOutput = cv2.line(ToOutput, (int(TibiaFLLocDP[0]), int(TibiaFLLocDP[1])), (int(TibiaTLLocDP[0]), int(TibiaTLLocDP[1])), (255,255,0),1)
-
-    Femur_line_img = cv2.line(Femurpred_img, (int(FemurFRLocDP[0]), int(FemurFRLocDP[1])),(int(FemurTRLocDP[0]), int(FemurTRLocDP[1])), (255,0,0),5)
-    Femur_line_img = cv2.line(Femur_line_img, (int(FemurFLLocDP[0]), int(FemurFLLocDP[1])), (int(FemurTLLocDP[0]), int(FemurTLLocDP[1])), (0,255,0),5) 
-
-    Tibiapred_img = copy.deepcopy(pred_img)
-    Tibia_line_img = cv2.line(Tibiapred_img, (int(TibiaFRLocDP[0]), int(TibiaFRLocDP[1])),(int(TibiaTRLocDP[0]), int(TibiaTRLocDP[1])), (255,0,0),5)
-    Tibia_line_img = cv2.line(Tibia_line_img, (int(TibiaFLLocDP[0]), int(TibiaFLLocDP[1])), (int(TibiaTLLocDP[0]), int(TibiaTLLocDP[1])), (0,255,0),5)
-    
-    Femur_line_img_crop = Femur_line_img[int(out_preds[0][1]-LcMmh):int(out_preds[0][1]+LcMmh),int(out_preds[0][0]-LcMmw):int(out_preds[0][0]+LcMmw),:]
-   
-    Tibia_line_img_crop = Tibia_line_img[int(out_preds[0][1]-LcMmh):int(out_preds[0][1]+LcMmh),int(out_preds[0][0]-LcMmw):int(out_preds[0][0]+LcMmw),:]
-    #plt.imsave('Femur_line_img.png',Femur_line_img.astype('uint8'))
-    #plt.imsave('Tibia_line_img.png',Tibia_line_img.astype('uint8'))
-    plt.subplot(1,3,2)
-    plt.imshow(Femur_line_img_crop,cmap = ('gray'))
-    plt.title('Based on Femur')  
-    plt.text(100,100,'Dist:%.2f'%FemurRLocSeDmin,ha = 'center', color = "g",fontsize=12)
-    plt.text(100,300,'Dist:%.2f'%FemurLLocSeDmin,ha = 'center', color = "r",fontsize=12)          
-    plt.axis('off')
     
 
-    plt.subplot(1,3,3)
-    plt.imshow(Tibia_line_img_crop,cmap = ('gray'))
-    plt.title('Based on Tibia')  
-    plt.text(100,100,'Dist:%.2f'%TibiaRLocSeDmin,ha = 'center', color = "g",fontsize=12)
-    plt.text(100,300,'Dist:%.2f'%TibiaLLocSeDmin,ha = 'center', color = "r",fontsize=12)         
-    plt.axis('off')
-
-    #plt.savefig('./Result/Knee_JSW_result.png', dpi=300)
-    print('knee line draw time:', time.time()-train_started, 'seconds')
-    plt.close()
-
-    #ds.some_function_that_modifies_arr
-
-    dsn = Dataset()
-    dsn.file_meta = copy.deepcopy(ds.file_meta) 
-    dsn.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2'
-    dsn.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.1.1'
-    dsn.file_meta.MediaStorageSOPInstanceUID = "1.2.3"
-    dsn.file_meta.ImplementationClassUID = "1.2.3.4"
-
-    for tagIndex in ds.keys():
-        if tagIndex == 'PixelData':
-            dsn.PixelData = ToOutput.tobytes()
-        elif tagIndex == 'WindowCenter' or tagIndex == 'WindowWidth':
-            continue
-        else:
-            dsn[tagIndex] = ds[tagIndex]
-
-    dsn.PatientName = 'Created'
-
-    dsn.Rows = osi[0]
-    dsn.Columns = osi[1]
-    dsn.PhotometricInterpretation = "RGB"
-    dsn.SamplesPerPixel = 3
-    dsn.BitsStored = 8
-    dsn.BitsAllocated = 8
-    dsn.HighBit = 7
-    dsn.PixelRepresentation = 0
-    dsn.PlanarConfiguration = 0 
-    dsn.NumberOfFrames = 1    
-    dsn.SOPClassUID = ds.SOPClassUID
-    dsn.SOPInstanceUID = ds.SOPInstanceUID
-    dsn.StudyInstanceUID = ds.StudyInstanceUID
-    dsn.SeriesInstanceUID = ds.SeriesInstanceUID     
-    dsn.ImageComments = 'OA KL Grading: %s (%.2f) \n Right Area: %.4f \n Left Area: %.4f \n Femur based Right Dist (Red line): %.2f \n Femur based Left Dist (Green line): %.2f \n Tibia based Right Dist (Blue line): %.2f \n Tibia based Left Dist (Yellow line): %.2f ' %(str(np.argmax(probs)),np.round(probs[np.argmax(probs)], 2),RPL,LPL,FemurRLocSeDmin,FemurLLocSeDmin,TibiaRLocSeDmin,TibiaLLocSeDmin)
-  
-    #dsn.add_new(0x002040000,'LT', str(FemurRLocSeDmin))
-    dsn.is_little_endian = True
-    dsn.is_implicit_VR = True
     
-    dsn.save_as('./Result/Test.DCM', write_like_original=False)
 
 
-
-    '''
-    ds.add_new(0x7FD11070,'DS', FemurRLocSeDmin)
-    ds.TransferSyntaxUID = '1.2.840.10008.1.2'
-    ds.PhotometricInterpretation = 'RGB'
-    ds.SamplesPerPixel = 3
-    #pred_img = some_function_that_modifies_arr(pred_img)
-    #pred_img  = some_function_that_compresses_arr(pred_img )  
-    # Write encapsulated and compressed data back to Pixel Data
-    #ds.PixelData = encapsulate(pixel_data ) 
-    ds.PixelData = pred_img
-    ds.save_as('./Result/Test.DCM')
-    '''
 if __name__ == '__main__':
     main()
